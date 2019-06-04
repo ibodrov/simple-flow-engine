@@ -1,15 +1,33 @@
 package com.github.ibodrov.simpleflowengine;
 
+/*-
+ * *****
+ * Simple Flow Engine
+ * -----
+ * Copyright (C) 2019 Ivan Bodrov
+ * -----
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ * =====
+ */
+
 import com.github.ibodrov.simpleflowengine.State.Status;
-import com.github.ibodrov.simpleflowengine.commands.*;
+import com.github.ibodrov.simpleflowengine.commands.Command;
+import com.github.ibodrov.simpleflowengine.commands.EvalElement;
 import com.github.ibodrov.simpleflowengine.elements.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
@@ -18,150 +36,99 @@ public class Runtime {
 
     private static final Logger log = LoggerFactory.getLogger(Runtime.class);
 
-    private final AtomicLong stateIdSeq = new AtomicLong(System.currentTimeMillis()); // TODO better initial value
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final Map<StateId, CompletableFuture<Status>> futures = new HashMap<>();
+    private final RuntimeContext ctx = new RuntimeContextImpl();
 
+    /**
+     * Starts a new process using the provided element as a starting point.
+     *
+     * @return the main thread state. The returned state object can be
+     * saved and used later to {@link #resume(State, String)} the process.
+     */
     public State start(Element e) throws Exception {
         return withResources(() -> {
-            State root = new State(nextStateId());
-
-            Stack<Command> stack = root.getStack();
-            stack.push(new EvalElement(e));
+            // create the initial state
+            State root = new State(ctx.nextStateId());
+            root.getStack().push(new EvalElement(e));
 
             eval(root);
+            handleErrors(root);
 
             log.info("start -> done");
+            // TODO cleanup complete branches
             return root;
         });
     }
 
+    /**
+     * Resumes the process from a specific point ("event").
+     *
+     * @return the updated state object.
+     */
     public State resume(State root, String eventRef) throws Exception {
         log.info("resume ['{}'] -> starting...", eventRef);
 
         return withResources(() -> {
-            State parent = findParent(root, eventRef);
-            if (parent != null) {
-                parent.setStatus(Status.READY);
-            }
-
+            // find whoever owns the event
             State owner = findOwner(root, eventRef);
             if (owner == null) {
                 throw new IllegalStateException("EventRef not found: " + eventRef);
             }
 
             owner.getEventRefs().remove(eventRef);
-            owner.setStatus(Status.READY);
 
-            root.getChildren().forEach(this::wake);
+            // wake the tree starting from the event's owner
+            // but skip the root as it's going to run in the caller's thread
+            wakeDependencies(root, owner);
 
+            // execute the root "thread" in the caller's thread
+            root.setStatus(Status.READY);
             eval(root);
-            log.info("resume ['{}'] -> done", eventRef);
+            handleErrors(root);
 
+            log.info("resume ['{}'] -> done", eventRef);
+            // TODO cleanup complete branches
             return root;
         });
-    }
-
-    private StateId nextStateId() {
-        return new StateId(stateIdSeq.getAndIncrement());
     }
 
     private void eval(State state) {
         Stack<Command> stack = state.getStack();
 
-        while (true) {
-            if (state.getStatus() == Status.SUSPENDED) {
-                break;
-            }
-
-            if (stack.isEmpty()) {
-                state.setStatus(Status.COMPLETE);
-                break;
-            }
-
-            Command cmd = stack.peek();
-            if (cmd instanceof EvalElement) {
-                stack.pop();
-                eval(state, ((EvalElement) cmd).getElement());
-            } else if (cmd instanceof Fork) {
-                stack.pop();
-
-                Fork f = (Fork) cmd;
-
-                State child = new State(f.getId());
-                child.getStack().push(new EvalElement(f.getElement()));
-                state.getChildren().add(child);
-
-                spawn(child);
-            } else if (cmd instanceof Join) {
-                while (true) {
-                    boolean complete;
-                    synchronized (futures) {
-                        complete = futures.entrySet().stream().allMatch(i -> i.getValue().getNow(Status.READY) == Status.COMPLETE);
-                    }
-                    if (complete) {
-                        stack.pop();
-                        break;
-                    }
-
-                    boolean suspended;
-                    synchronized (futures) {
-                        suspended = futures.entrySet().stream().anyMatch(i -> i.getValue().getNow(Status.READY) == Status.SUSPENDED);
-                    }
-                    if (suspended) {
-                        state.setStatus(Status.SUSPENDED);
-                        break;
-                    }
-
-                    futures.values().stream().filter(i -> i.getNow(Status.READY) == Status.READY)
-                            .map(i -> {
-                                try {
-                                    return i.get();
-                                } catch (Exception e) {
-                                    throw new RuntimeException(e);
-                                }
-                            });
+        try {
+            while (true) {
+                if (state.getStatus() == Status.SUSPENDED) {
+                    break;
                 }
-            } else if (cmd instanceof Suspend) {
-                stack.pop();
 
-                state.setStatus(Status.SUSPENDED);
-                state.getEventRefs().add(((Suspend) cmd).getEventRef());
-            } else {
-                throw new IllegalStateException("Unknown command: " + cmd.getClass());
+                if (stack.isEmpty()) {
+                    state.setStatus(Status.DONE);
+                    break;
+                }
+
+                Command cmd = stack.peek();
+                cmd.eval(ctx, state);
             }
+        } catch (Throwable t) {
+            state.setStatus(Status.DONE);
+            state.setLastError(t);
         }
-    }
-
-    private void eval(State state, Element element) {
-        RuntimeContext ctx = Runtime.this::nextStateId;
-        element.eval(ctx, state);
     }
 
     private void spawn(State state) {
-        CompletableFuture<Status> f = new CompletableFuture<>();
-        synchronized (futures) {
-            futures.put(state.getId(), f);
-        }
-
-        executor.submit(() -> {
-            try {
-                eval(state);
-                f.complete(state.getStatus());
-            } catch (Throwable t) {
-                f.completeExceptionally(t);
-            }
-        });
+        executor.submit(() -> eval(state));
     }
 
-    private void wake(State root) {
-        root.getChildren().forEach(this::wake);
+    private void wakeDependencies(State root, State target) {
+        target.setStatus(Status.READY);
+        spawn(target);
 
-        if (root.getStatus() != Status.READY) {
+        State parent = findParent(root, target);
+        if (parent == root || parent == null) {
             return;
         }
 
-        spawn(root);
+        wakeDependencies(root, parent);
     }
 
     private <T> T withResources(Callable<T> r) throws Exception {
@@ -172,22 +139,39 @@ public class Runtime {
         }
     }
 
-    private static State findParent(State root, String eventRef) {
-        if (root.getChildren().stream()
-                .anyMatch(i -> i.getEventRefs().contains(eventRef))) {
+    private class RuntimeContextImpl implements RuntimeContext {
+
+        private final AtomicLong stateIdSeq = new AtomicLong(System.currentTimeMillis());
+
+        @Override
+        public StateId nextStateId() {
+            return new StateId(stateIdSeq.getAndIncrement());
+        }
+
+        @Override
+        public void spawn(State state) {
+            Runtime.this.spawn(state);
+        }
+    }
+
+    private static State findParent(State root, State child) {
+        if (root.getChildren().contains(child)) {
             return root;
         }
 
         for (State c : root.getChildren()) {
-            State t = findParent(c, eventRef);
-            if (t != null) {
-                return t;
+            State s = findParent(c, child);
+            if (s != null) {
+                return s;
             }
         }
 
         return null;
     }
 
+    /**
+     * Returns a state object which owns the specified {@code eventRef}.
+     */
     private static State findOwner(State root, String eventRef) {
         if (root.getEventRefs().contains(eventRef)) {
             return root;
@@ -201,5 +185,19 @@ public class Runtime {
         }
 
         return null;
+    }
+
+    private static void handleErrors(State state) {
+        Throwable t = state.getLastError();
+        if (t == null) {
+            return;
+        }
+
+        // avoid unnecessary wrapping
+        if (t instanceof RuntimeException) {
+            throw (RuntimeException) t;
+        }
+
+        throw new RuntimeException(t);
     }
 }

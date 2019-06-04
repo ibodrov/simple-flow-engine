@@ -8,6 +8,17 @@
     <artifactId>simple-flow-engine</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 
+    <name>${project.groupId}:${project.artifactId}</name>
+    <description>Simple Flow Engine</description>
+
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
     <properties>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
@@ -36,4 +47,37 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>license-maven-plugin</artifactId>
+                <version>1.14</version>
+                <executions>
+                    <execution>
+                        <id>first</id>
+                        <goals>
+                            <goal>update-file-header</goal>
+                        </goals>
+                        <phase>process-sources</phase>
+                    </execution>
+                </executions>
+                <configuration>
+                    <verbose>false</verbose>
+                    <licenseName>apache_v2</licenseName>
+                    <organizationName>Ivan Bodrov</organizationName>
+                    <projectName>Simple Flow Engine</projectName>
+                    <inceptionYear>2019</inceptionYear>
+                    <processStartTag>*****</processStartTag>
+                    <sectionDelimiter>-----</sectionDelimiter>
+                    <processEndTag>=====</processEndTag>
+                    <roots>
+                        <root>src/main/java</root>
+                        <root>src/test/java</root>
+                    </roots>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>

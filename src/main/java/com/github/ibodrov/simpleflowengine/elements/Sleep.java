@@ -1,4 +1,4 @@
-package com.github.ibodrov.simpleflowengine.commands;
+package com.github.ibodrov.simpleflowengine.elements;
 
 /*-
  * *****
@@ -21,25 +21,28 @@ package com.github.ibodrov.simpleflowengine.commands;
  */
 
 import com.github.ibodrov.simpleflowengine.RuntimeContext;
-import com.github.ibodrov.simpleflowengine.Stack;
 import com.github.ibodrov.simpleflowengine.State;
-import com.github.ibodrov.simpleflowengine.elements.Element;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class EvalElement implements Command {
+public class Sleep implements Element {
 
     private static final long serialVersionUID = 1L;
+    private static final Logger log = LoggerFactory.getLogger(Sleep.class);
 
-    private final Element element;
+    private final long ms;
 
-    public EvalElement(Element element) {
-        this.element = element;
+    public Sleep(long ms) {
+        this.ms = ms;
     }
 
     @Override
     public void eval(RuntimeContext ctx, State state) {
-        Stack<Command> stack = state.getStack();
-        stack.pop();
-
-        element.eval(ctx, state);
+        log.info("Sleep -> {}ms...", ms);
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
