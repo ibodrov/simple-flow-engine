@@ -31,12 +31,18 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Executes flows consisting of series of {@link Command} elements.
+ * Shouldn't be reused between executions.
+ */
 public class Runtime {
 
     private static final Logger log = LoggerFactory.getLogger(Runtime.class);
 
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final RuntimeContext ctx = new RuntimeContextImpl();
+
+    private boolean closed = false;
 
     /**
      * Starts a new process using the provided command as a starting point.
@@ -47,7 +53,7 @@ public class Runtime {
     public State start(Command cmd) throws Exception {
         log.info("start -> starting...");
 
-        return withResources(() -> {
+        return once(() -> {
             // create the initial state
             State root = new State(ctx.nextStateId());
             root.getStack().push(cmd);
@@ -71,7 +77,7 @@ public class Runtime {
     public State resume(State root, String eventRef) throws Exception {
         log.info("resume ['{}'] -> starting...", eventRef);
 
-        return withResources(() -> {
+        return once(() -> {
             // find whoever owns the event
             State owner = findOwner(root, eventRef);
             if (owner == null) {
@@ -138,11 +144,20 @@ public class Runtime {
         wakeDependencies(root, parent);
     }
 
-    private <T> T withResources(Callable<T> r) throws Exception {
+    private synchronized <T> T once(Callable<T> r) throws Exception {
+        assertOpen();
+
         try {
             return r.call();
         } finally {
             executor.shutdown();
+            closed = true;
+        }
+    }
+
+    private void assertOpen() {
+        if (closed) {
+            throw new IllegalStateException("Runtime objects shouldn't be re-used");
         }
     }
 
