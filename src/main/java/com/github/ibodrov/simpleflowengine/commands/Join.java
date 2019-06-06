@@ -24,7 +24,6 @@ import com.github.ibodrov.simpleflowengine.*;
 import com.github.ibodrov.simpleflowengine.State.Status;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -62,7 +61,7 @@ public class Join implements Command {
                 return;
             }
 
-            // TODO find a better way
+            // TODO replace with futures?
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {

@@ -20,7 +20,7 @@ public class MultipleExceptions extends RuntimeException {
 
     private static String formatMessage(List<Throwable> causes) {
         StringBuilder sb = new StringBuilder();
-        for (Iterator<Throwable> i = causes.iterator(); i.hasNext();) {
+        for (Iterator<Throwable> i = causes.iterator(); i.hasNext(); ) {
             Throwable t = i.next();
             sb.append("[").append(t.getMessage()).append("]");
             if (i.hasNext()) {
