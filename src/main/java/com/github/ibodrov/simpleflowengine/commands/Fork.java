@@ -24,18 +24,21 @@ import com.github.ibodrov.simpleflowengine.RuntimeContext;
 import com.github.ibodrov.simpleflowengine.Stack;
 import com.github.ibodrov.simpleflowengine.State;
 import com.github.ibodrov.simpleflowengine.StateId;
-import com.github.ibodrov.simpleflowengine.elements.Element;
 
+/**
+ * Spawns a new child "thread" using the specified command as
+ * its starting point.
+ */
 public class Fork implements Command {
 
     private static final long serialVersionUID = 1L;
 
     private final StateId id;
-    private final Element element;
+    private final Command command;
 
-    public Fork(StateId id, Element element) {
+    public Fork(StateId id, Command command) {
         this.id = id;
-        this.element = element;
+        this.command = command;
     }
 
     @Override
@@ -44,7 +47,7 @@ public class Fork implements Command {
         stack.pop();
 
         State child = new State(id);
-        child.getStack().push(new EvalElement(element));
+        child.getStack().push(command);
         state.getChildren().add(child);
 
         ctx.spawn(child);

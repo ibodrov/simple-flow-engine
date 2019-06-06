@@ -20,10 +20,9 @@ package com.github.ibodrov.simpleflowengine;
  * =====
  */
 
+import com.github.ibodrov.simpleflowengine.commands.Block;
 import com.github.ibodrov.simpleflowengine.commands.Command;
 import com.github.ibodrov.simpleflowengine.commands.Suspend;
-import com.github.ibodrov.simpleflowengine.elements.Block;
-import com.github.ibodrov.simpleflowengine.elements.Element;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +38,7 @@ public class SimpleTest {
 
     @Test
     public void test() throws Exception {
-        Element program = new Block(asList(
+        Command program = new Block(asList(
                 new Debug("hello!"),
                 new Block("parallel", asList(
                         new Block(asList(
@@ -94,7 +93,7 @@ public class SimpleTest {
         }
     }
 
-    public static class TestException implements Element {
+    public static class TestException implements Command {
 
         private static final long serialVersionUID = 1L;
 
@@ -104,7 +103,7 @@ public class SimpleTest {
         }
     }
 
-    public static class TestSuspend implements Element {
+    public static class TestSuspend implements Command {
 
         private static final long serialVersionUID = 1L;
 
@@ -117,11 +116,13 @@ public class SimpleTest {
         @Override
         public void eval(RuntimeContext ctx, State state) {
             Stack<Command> stack = state.getStack();
+            stack.pop();
+
             stack.push(new Suspend(eventRef));
         }
     }
 
-    public static class Debug implements Element {
+    public static class Debug implements Command {
 
         private static final long serialVersionUID = 1L;
         private static final Logger log = LoggerFactory.getLogger(Debug.class);
@@ -134,11 +135,14 @@ public class SimpleTest {
 
         @Override
         public void eval(RuntimeContext ctx, State state) {
+            Stack<Command> stack = state.getStack();
+            stack.pop();
+
             log.info("Debug -> {}", message);
         }
     }
 
-    public static class Sleep implements Element {
+    public static class Sleep implements Command {
 
         private static final long serialVersionUID = 1L;
         private static final Logger log = LoggerFactory.getLogger(Sleep.class);
@@ -151,6 +155,9 @@ public class SimpleTest {
 
         @Override
         public void eval(RuntimeContext ctx, State state) {
+            Stack<Command> stack = state.getStack();
+            stack.pop();
+
             log.info("Sleep -> {}ms...", ms);
             try {
                 Thread.sleep(ms);

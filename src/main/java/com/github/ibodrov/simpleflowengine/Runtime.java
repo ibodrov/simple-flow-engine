@@ -22,8 +22,6 @@ package com.github.ibodrov.simpleflowengine;
 
 import com.github.ibodrov.simpleflowengine.State.Status;
 import com.github.ibodrov.simpleflowengine.commands.Command;
-import com.github.ibodrov.simpleflowengine.commands.EvalElement;
-import com.github.ibodrov.simpleflowengine.elements.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -41,18 +39,18 @@ public class Runtime {
     private final RuntimeContext ctx = new RuntimeContextImpl();
 
     /**
-     * Starts a new process using the provided element as a starting point.
+     * Starts a new process using the provided command as a starting point.
      *
      * @return the main thread state. The returned state object can be
      * saved and used later to {@link #resume(State, String)} the process.
      */
-    public State start(Element e) throws Exception {
+    public State start(Command cmd) throws Exception {
         log.info("start -> starting...");
 
         return withResources(() -> {
             // create the initial state
             State root = new State(ctx.nextStateId());
-            root.getStack().push(new EvalElement(e));
+            root.getStack().push(cmd);
 
             // execute the root "thread"
             eval(root);

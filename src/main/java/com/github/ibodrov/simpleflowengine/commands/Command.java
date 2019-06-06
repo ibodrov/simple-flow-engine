@@ -25,6 +25,9 @@ import com.github.ibodrov.simpleflowengine.State;
 
 import java.io.Serializable;
 
+/**
+ * Commands are execution steps.
+ */
 public interface Command extends Serializable {
 
     void eval(RuntimeContext ctx, State state);

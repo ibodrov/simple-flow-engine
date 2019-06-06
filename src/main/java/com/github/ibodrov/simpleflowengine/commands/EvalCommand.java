@@ -1,4 +1,4 @@
-package com.github.ibodrov.simpleflowengine.elements;
+package com.github.ibodrov.simpleflowengine.commands;
 
 /*-
  * *****
@@ -21,11 +21,24 @@ package com.github.ibodrov.simpleflowengine.elements;
  */
 
 import com.github.ibodrov.simpleflowengine.RuntimeContext;
+import com.github.ibodrov.simpleflowengine.Stack;
 import com.github.ibodrov.simpleflowengine.State;
 
-import java.io.Serializable;
+public class EvalCommand implements Command {
 
-public interface Element extends Serializable {
+    private static final long serialVersionUID = 1L;
 
-    void eval(RuntimeContext ctx, State state);
+    private final Command command;
+
+    public EvalCommand(Command command) {
+        this.command = command;
+    }
+
+    @Override
+    public void eval(RuntimeContext ctx, State state) {
+        Stack<Command> stack = state.getStack();
+        stack.pop();
+
+        command.eval(ctx, state);
+    }
 }

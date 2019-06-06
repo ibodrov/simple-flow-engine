@@ -27,6 +27,10 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Waits for the specified child "threads" to complete or suspend.
+ * Suspends the current "thread" if there are any suspended children.
+ */
 public class Join implements Command {
 
     private static final long serialVersionUID = 1L;
@@ -40,6 +44,14 @@ public class Join implements Command {
     @Override
     public void eval(RuntimeContext ctx, State state) {
         Stack<Command> stack = state.getStack();
+
+        // Here's a very dumb but working solution to the problem
+        // of monitoring the child "threads" state - just a loop
+        // with a delay. On each iteration it decides whether
+        // the join command can be removed from the stack (and thus
+        // continuing the execution) or not.
+        // We could've used futures instead, but it's way more
+        // complicated - especially when suspend/resume are involved.
 
         while (true) {
             boolean done = allDone(state, ids);
@@ -61,7 +73,7 @@ public class Join implements Command {
                 return;
             }
 
-            // TODO replace with futures?
+            // some children are still running, wait for a bit and then check again
             try {
                 Thread.sleep(100);
             } catch (InterruptedException e) {

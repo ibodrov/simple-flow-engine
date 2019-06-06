@@ -26,6 +26,10 @@ import com.github.ibodrov.simpleflowengine.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Suspends the current "thread" and adds the specified event
+ * to the list of events.
+ */
 public class Suspend implements Command {
 
     private static final long serialVersionUID = 1L;

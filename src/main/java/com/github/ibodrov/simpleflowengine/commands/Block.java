@@ -1,4 +1,4 @@
-package com.github.ibodrov.simpleflowengine.elements;
+package com.github.ibodrov.simpleflowengine.commands;
 
 /*-
  * *****
@@ -24,50 +24,47 @@ import com.github.ibodrov.simpleflowengine.RuntimeContext;
 import com.github.ibodrov.simpleflowengine.Stack;
 import com.github.ibodrov.simpleflowengine.State;
 import com.github.ibodrov.simpleflowengine.StateId;
-import com.github.ibodrov.simpleflowengine.commands.Command;
-import com.github.ibodrov.simpleflowengine.commands.EvalElement;
-import com.github.ibodrov.simpleflowengine.commands.Fork;
-import com.github.ibodrov.simpleflowengine.commands.Join;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-public class Block implements Element {
+public class Block implements Command {
 
     private static final long serialVersionUID = 1L;
 
     private final String strategyRef;
-    private final List<Element> elements;
+    private final List<Command> commands;
 
-    public Block(List<Element> elements) {
-        this("sequential", elements);
+    public Block(List<Command> commands) {
+        this("sequential", commands);
     }
 
-    public Block(String strategyRef, List<Element> elements) {
+    public Block(String strategyRef, List<Command> commands) {
         this.strategyRef = strategyRef;
-        this.elements = elements;
+        this.commands = commands;
     }
 
     @Override
     public void eval(RuntimeContext ctx, State state) {
         Stack<Command> stack = state.getStack();
+        stack.pop();
 
         if ("sequential".equals(strategyRef)) {
             // sequential execution is very simple: we just need to add
-            // EvalElements for each element of the block
+            // each command of the block onto the stack
 
-            List<Element> l = new ArrayList<>(elements);
+            List<Command> l = new ArrayList<>(commands);
 
-            // to preserve the original order the elements must be added onto
+            // to preserve the original order the commands must be added onto
             // the stack in the reversed order
             Collections.reverse(l);
 
-            l.forEach(e -> stack.push(new EvalElement(e)));
+            l.forEach(stack::push);
         } else if ("parallel".equals(strategyRef)) {
-            // parallel execution consist of creating "forks" for each element
+            // parallel execution consist of creating "forks" for each command
             // and a combined "join"
 
-            List<Map.Entry<StateId, Element>> forks = elements.stream()
+            List<Map.Entry<StateId, Command>> forks = commands.stream()
                     .map(e -> new AbstractMap.SimpleEntry<>(ctx.nextStateId(), e))
                     .collect(Collectors.toList());
 
