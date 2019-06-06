@@ -55,7 +55,7 @@ public class Join implements Command {
             boolean suspended = any(state, ids, Status.SUSPENDED);
             boolean ready = any(state, ids, Status.READY);
 
-            // all children either DONE or SUSPENDED - suspend the parent thread
+            // all children are either DONE or SUSPENDED - suspend the parent thread
             if (!ready && suspended) {
                 handleErrors(state, ids);
                 state.setStatus(Status.SUSPENDED);

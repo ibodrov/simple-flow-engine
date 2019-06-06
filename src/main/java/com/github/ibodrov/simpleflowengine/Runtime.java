@@ -27,6 +27,7 @@ import com.github.ibodrov.simpleflowengine.elements.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Iterator;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -46,16 +47,20 @@ public class Runtime {
      * saved and used later to {@link #resume(State, String)} the process.
      */
     public State start(Element e) throws Exception {
+        log.info("start -> starting...");
+
         return withResources(() -> {
             // create the initial state
             State root = new State(ctx.nextStateId());
             root.getStack().push(new EvalElement(e));
 
+            // execute the root "thread"
             eval(root);
+
             handleErrors(root);
+            cleanup(root);
 
             log.info("start -> done");
-            // TODO cleanup complete branches
             return root;
         });
     }
@@ -84,10 +89,11 @@ public class Runtime {
             // execute the root "thread" in the caller's thread
             root.setStatus(Status.READY);
             eval(root);
+
             handleErrors(root);
+            cleanup(root);
 
             log.info("resume ['{}'] -> done", eventRef);
-            // TODO cleanup complete branches
             return root;
         });
     }
@@ -119,6 +125,9 @@ public class Runtime {
         executor.submit(() -> eval(state));
     }
 
+    /**
+     * Resumes all "threads" of the target state's tree.
+     */
     private void wakeDependencies(State root, State target) {
         target.setStatus(Status.READY);
         spawn(target);
@@ -139,21 +148,28 @@ public class Runtime {
         }
     }
 
-    private class RuntimeContextImpl implements RuntimeContext {
-
-        private final AtomicLong stateIdSeq = new AtomicLong(System.currentTimeMillis());
-
-        @Override
-        public StateId nextStateId() {
-            return new StateId(stateIdSeq.getAndIncrement());
+    /**
+     * Removes completed "threads" from the state.
+     */
+    private static void cleanup(State state) {
+        if (state.getStatus() != Status.DONE) {
+            return;
         }
 
-        @Override
-        public void spawn(State state) {
-            Runtime.this.spawn(state);
+        for (Iterator<State> i = state.getChildren().iterator(); i.hasNext(); ) {
+            State c = i.next();
+
+            if (c.getStatus() == Status.DONE) {
+                i.remove();
+            }
+
+            cleanup(c);
         }
     }
 
+    /**
+     * Returns a parent state object of the specified child.
+     */
     private static State findParent(State root, State child) {
         if (root.getChildren().contains(child)) {
             return root;
@@ -187,6 +203,9 @@ public class Runtime {
         return null;
     }
 
+    /**
+     * Rethrows errors stored in the state.
+     */
     private static void handleErrors(State state) {
         Throwable t = state.getLastError();
         if (t == null) {
@@ -199,5 +218,20 @@ public class Runtime {
         }
 
         throw new RuntimeException(t);
+    }
+
+    private class RuntimeContextImpl implements RuntimeContext {
+
+        private final AtomicLong stateIdSeq = new AtomicLong(System.currentTimeMillis());
+
+        @Override
+        public StateId nextStateId() {
+            return new StateId(stateIdSeq.getAndIncrement());
+        }
+
+        @Override
+        public void spawn(State state) {
+            Runtime.this.spawn(state);
+        }
     }
 }

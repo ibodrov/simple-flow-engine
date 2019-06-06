@@ -20,8 +20,18 @@ package com.github.ibodrov.simpleflowengine;
  * =====
  */
 
-import com.github.ibodrov.simpleflowengine.elements.*;
+import com.github.ibodrov.simpleflowengine.commands.Command;
+import com.github.ibodrov.simpleflowengine.commands.Suspend;
+import com.github.ibodrov.simpleflowengine.elements.Block;
+import com.github.ibodrov.simpleflowengine.elements.Element;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 
 import static java.util.Arrays.asList;
 
@@ -59,19 +69,94 @@ public class SimpleTest {
                 new Debug("goodbye!")
         ));
 
-        program = new Block(asList(
-                new Debug("hello!"),
-                new Block("parallel", asList(
-                        new TestException(),
-                        new TestException(),
-                        new Debug("!")
-                )),
-                new Debug("goodbye!")
-        ));
-
         State state = new Runtime().start(program);
-//        state = new Runtime().resume(state, "c");
-//        state = new Runtime().resume(state, "b");
-//        state = new Runtime().resume(state, "a");
+        state = serializationRoundtrip(state);
+
+        state = new Runtime().resume(state, "c");
+        state = serializationRoundtrip(state);
+
+        state = new Runtime().resume(state, "b");
+        state = serializationRoundtrip(state);
+
+        state = new Runtime().resume(state, "a");
+        state = serializationRoundtrip(state);
+    }
+
+    private static State serializationRoundtrip(State state) throws Exception {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (ObjectOutputStream out = new ObjectOutputStream(baos)) {
+            out.writeObject(state);
+        }
+
+        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+        try (ObjectInputStream in = new ObjectInputStream(bais)) {
+            return (State) in.readObject();
+        }
+    }
+
+    public static class TestException implements Element {
+
+        private static final long serialVersionUID = 1L;
+
+        @Override
+        public void eval(RuntimeContext ctx, State state) {
+            throw new RuntimeException("Whoops!");
+        }
+    }
+
+    public static class TestSuspend implements Element {
+
+        private static final long serialVersionUID = 1L;
+
+        private final String eventRef;
+
+        public TestSuspend(String eventRef) {
+            this.eventRef = eventRef;
+        }
+
+        @Override
+        public void eval(RuntimeContext ctx, State state) {
+            Stack<Command> stack = state.getStack();
+            stack.push(new Suspend(eventRef));
+        }
+    }
+
+    public static class Debug implements Element {
+
+        private static final long serialVersionUID = 1L;
+        private static final Logger log = LoggerFactory.getLogger(Debug.class);
+
+        private final String message;
+
+        public Debug(String message) {
+            this.message = message;
+        }
+
+        @Override
+        public void eval(RuntimeContext ctx, State state) {
+            log.info("Debug -> {}", message);
+        }
+    }
+
+    public static class Sleep implements Element {
+
+        private static final long serialVersionUID = 1L;
+        private static final Logger log = LoggerFactory.getLogger(Sleep.class);
+
+        private final long ms;
+
+        public Sleep(long ms) {
+            this.ms = ms;
+        }
+
+        @Override
+        public void eval(RuntimeContext ctx, State state) {
+            log.info("Sleep -> {}ms...", ms);
+            try {
+                Thread.sleep(ms);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 }
