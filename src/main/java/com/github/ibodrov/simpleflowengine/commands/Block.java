@@ -32,15 +32,15 @@ public class Block implements Command {
 
     private static final long serialVersionUID = 1L;
 
-    private final String strategyRef;
+    private final Strategy strategy;
     private final List<Command> commands;
 
     public Block(List<Command> commands) {
-        this("sequential", commands);
+        this(Strategy.SEQUENTIAL, commands);
     }
 
-    public Block(String strategyRef, List<Command> commands) {
-        this.strategyRef = strategyRef;
+    public Block(Strategy strategy, List<Command> commands) {
+        this.strategy = strategy;
         this.commands = commands;
     }
 
@@ -49,32 +49,44 @@ public class Block implements Command {
         Stack<Command> stack = state.getStack();
         stack.pop();
 
-        if ("sequential".equals(strategyRef)) {
-            // sequential execution is very simple: we just need to add
-            // each command of the block onto the stack
+        switch (this.strategy) {
+            case SEQUENTIAL: {
+                // sequential execution is very simple: we just need to add
+                // each command of the block onto the stack
 
-            List<Command> l = new ArrayList<>(commands);
+                List<Command> l = new ArrayList<>(commands);
 
-            // to preserve the original order the commands must be added onto
-            // the stack in the reversed order
-            Collections.reverse(l);
+                // to preserve the original order the commands must be added onto
+                // the stack in the reversed order
+                Collections.reverse(l);
+                l.forEach(stack::push);
 
-            l.forEach(stack::push);
-        } else if ("parallel".equals(strategyRef)) {
-            // parallel execution consist of creating "forks" for each command
-            // and a combined "join"
+                break;
+            }
+            case PARALLEL: {
+                // parallel execution consist of creating "forks" for each command
+                // and a combined "join"
 
-            List<Map.Entry<StateId, Command>> forks = commands.stream()
-                    .map(e -> new AbstractMap.SimpleEntry<>(ctx.nextStateId(), e))
-                    .collect(Collectors.toList());
+                List<Map.Entry<StateId, Command>> forks = commands.stream()
+                        .map(e -> new AbstractMap.SimpleEntry<>(ctx.nextStateId(), e))
+                        .collect(Collectors.toList());
 
-            Collections.reverse(forks);
+                stack.push(new Join(forks.stream().map(Map.Entry::getKey).collect(Collectors.toSet())));
 
-            stack.push(new Join(forks.stream().map(Map.Entry::getKey).collect(Collectors.toSet())));
+                Collections.reverse(forks);
+                forks.forEach(f -> stack.push(new Fork(f.getKey(), f.getValue())));
 
-            forks.forEach(f -> stack.push(new Fork(f.getKey(), f.getValue())));
-        } else {
-            throw new IllegalStateException("Unknown block strategyRef: " + strategyRef);
+                break;
+            }
+            default: {
+                throw new IllegalStateException("Unknown block strategy: " + strategy);
+            }
         }
+    }
+
+    public enum Strategy {
+
+        SEQUENTIAL,
+        PARALLEL
     }
 }

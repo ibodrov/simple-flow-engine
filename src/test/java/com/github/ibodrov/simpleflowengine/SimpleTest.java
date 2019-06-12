@@ -31,7 +31,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
+import static com.github.ibodrov.simpleflowengine.commands.Block.Strategy.PARALLEL;
 import static java.util.Arrays.asList;
 
 public class SimpleTest {
@@ -39,20 +43,20 @@ public class SimpleTest {
     @Test
     public void test() throws Exception {
         Command program = new Block(asList(
-                new Debug("hello!"),
-                new Block("parallel", asList(
+                tag("hello", new Debug("hello!")),
+                new Block(PARALLEL, asList(
                         new Block(asList(
-                                new Debug("before suspend A"),
+                                tag("beforeA", new Debug("before suspend A")),
                                 new TestSuspend("a"),
-                                new Block("parallel", asList(
+                                new Block(PARALLEL, asList(
                                         new Sleep(2000),
                                         new Sleep(1000)
                                 )),
-                                new Debug("after suspend A")
+                                tag("afterA", new Debug("after suspend A"))
                         )),
                         new Block(asList(
                                 new Debug("before suspend B"),
-                                new Block("parallel", asList(
+                                new Block(PARALLEL, asList(
                                         new Sleep(500),
                                         new Block(asList(
                                                 new Debug("before suspend C"),
@@ -65,20 +69,38 @@ public class SimpleTest {
                                 new Debug("after suspend B")
                         ))
                 )),
-                new Debug("goodbye!")
+                tag("goodbye", new Debug("goodbye!"))
         ));
 
-        State state = new Runtime().start(program);
+        RecordingListener listener = new RecordingListener();
+
+        State state = start(listener, program);
+        assertTags(listener, "hello", "beforeA");
         state = serializationRoundtrip(state);
 
-        state = new Runtime().resume(state, "c");
+        state = resume(listener, state, "c");
         state = serializationRoundtrip(state);
 
-        state = new Runtime().resume(state, "b");
+        state = resume(listener, state, "b");
         state = serializationRoundtrip(state);
 
-        state = new Runtime().resume(state, "a");
+        state = resume(listener, state, "a");
+        assertTags(listener, "goodbye");
         state = serializationRoundtrip(state);
+    }
+
+    private static State start(RuntimeListener listener, Command program) throws Exception {
+        return new Runtime.Builder()
+                .withListener(listener)
+                .build()
+                .start(program);
+    }
+
+    private static State resume(RuntimeListener listener, State state, String eventRef) throws Exception {
+        return new Runtime.Builder()
+                .withListener(listener)
+                .build()
+                .resume(state, eventRef);
     }
 
     private static State serializationRoundtrip(State state) throws Exception {
@@ -90,6 +112,30 @@ public class SimpleTest {
         ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
         try (ObjectInputStream in = new ObjectInputStream(bais)) {
             return (State) in.readObject();
+        }
+    }
+
+    private static Command tag(String tag, Command cmd) {
+        return new Tagged(tag, cmd);
+    }
+
+    private static void assertTags(RecordingListener listener, String ... tags) {
+        List<Command> l = listener.purge();
+
+        Iterator<Command> i = l.iterator();
+        for (String t : tags) {
+            if (!i.hasNext()) {
+                throw new IllegalStateException("Tag not found: " + t);
+            }
+
+            while (true) {
+                Command c = i.next();
+                if (c instanceof Tagged) {
+                    if (t.equals(((Tagged) c).getTag())) {
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -163,6 +209,50 @@ public class SimpleTest {
                 Thread.sleep(ms);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    public static class Tagged implements Command {
+
+        private final String tag;
+        private final Command delegate;
+
+        public Tagged(String tag, Command delegate) {
+            this.tag = tag;
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void eval(RuntimeContext ctx, State state) {
+            delegate.eval(ctx, state);
+        }
+
+        public String getTag() {
+            return tag;
+        }
+    }
+
+    public static class RecordingListener implements RuntimeListener {
+
+        private final List<Command> commands = new ArrayList<>();
+
+        public List<Command> purge() {
+            synchronized (commands) {
+                List<Command> l = new ArrayList<>(commands);
+                commands.clear();
+                return l;
+            }
+        }
+
+        @Override
+        public void beforeCommand(Command cmd) {
+        }
+
+        @Override
+        public void afterCommand(Command cmd) {
+            synchronized (commands) {
+                commands.add(cmd);
             }
         }
     }

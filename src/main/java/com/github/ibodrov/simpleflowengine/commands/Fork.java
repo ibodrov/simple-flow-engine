@@ -50,6 +50,7 @@ public class Fork implements Command {
         child.getStack().push(command);
         state.getChildren().add(child);
 
+        // TODO allow block-local thread pools
         ctx.spawn(child);
     }
 }

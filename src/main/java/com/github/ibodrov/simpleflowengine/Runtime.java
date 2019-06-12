@@ -25,7 +25,10 @@ import com.github.ibodrov.simpleflowengine.commands.Command;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -39,10 +42,16 @@ public class Runtime {
 
     private static final Logger log = LoggerFactory.getLogger(Runtime.class);
 
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ExecutorService executor;
+    private final List<RuntimeListener> listeners;
     private final RuntimeContext ctx = new RuntimeContextImpl();
 
     private boolean closed = false;
+
+    private Runtime(ExecutorService executor, List<RuntimeListener> listeners) {
+        this.executor = executor;
+        this.listeners = listeners;
+    }
 
     /**
      * Starts a new process using the provided command as a starting point.
@@ -117,7 +126,10 @@ public class Runtime {
                 }
 
                 Command cmd = stack.peek();
+
+                listeners.forEach(l -> l.beforeCommand(cmd));
                 cmd.eval(ctx, state);
+                listeners.forEach(l -> l.afterCommand(cmd));
             }
         } catch (Throwable t) {
             state.setStatus(Status.DONE);
@@ -245,6 +257,37 @@ public class Runtime {
         @Override
         public void spawn(State state) {
             Runtime.this.spawn(state);
+        }
+    }
+
+    public static class Builder {
+
+        private ExecutorService executor;
+        private List<RuntimeListener> listeners;
+
+        public Builder withExecutor(ExecutorService executor) {
+            this.executor = executor;
+            return this;
+        }
+
+        public Builder withListener(RuntimeListener listener) {
+            if (listeners == null) {
+                listeners = new ArrayList<>();
+            }
+            listeners.add(listener);
+            return this;
+        }
+
+        public Runtime build() {
+            if (executor == null) {
+                executor = Executors.newCachedThreadPool();
+            }
+
+            if (listeners == null) {
+                listeners = Collections.emptyList();
+            }
+
+            return new Runtime(executor, listeners);
         }
     }
 }
